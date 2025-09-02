@@ -1,0 +1,230 @@
+<!-- index.html (place in same folder as app.py and crop_model.pkl) -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Smart Crop Recommendation</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <style>
+    body { font-family: Inter, Arial, sans-serif; background: #f6f9f6; margin: 0; padding: 20px; }
+    .wrap { max-width: 820px; margin: 18px auto; background: #fff; border-radius: 10px; box-shadow: 0 6px 20px rgba(0,0,0,0.08); padding: 22px; }
+    h1 { margin: 0 0 8px; color: #176f2f; }
+    p.lead { color: #555; margin-top: 0; }
+    .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 12px; }
+    label { font-size: 13px; color: #333; display: block; margin-bottom: 6px; }
+    input[type="number"], select, .range-wrap { width: 100%; padding: 8px 10px; border-radius: 6px; border: 1px solid #ddd; box-sizing: border-box; }
+    .full { grid-column: 1 / -1; }
+    button { background: #2e7d32; color: white; border: 0; padding: 10px 14px; border-radius: 8px; cursor: pointer; font-weight: 600; }
+    button:hover { background: #235c27; }
+    .result { margin-top: 18px; padding: 14px; border-radius: 8px; background: #e8f5e9; border: 1px solid #d8f0d9; }
+    table { width: 100%; border-collapse: collapse; margin-top: 8px; font-size: 14px; }
+    th, td { border: 1px solid #ececec; padding: 8px; text-align: center; }
+    th { background: #fafafa; }
+    .small { font-size: 13px; color: #444; margin-top: 6px; }
+    .preset-note { font-size: 13px; color: #777; margin-top: 6px; }
+    .range-row { display:flex; gap: 10px; align-items:center; }
+    .range-row span.value { min-width: 72px; text-align:right; font-weight:600; color:#333 }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <h1>🌾 Smart Crop Recommendation</h1>
+    <p class="lead">Enter soil & local data — or choose a city to auto-fetch weather. Use presets to autofill N/P/K.</p>
+
+    <form action="/predict" method="POST" id="form">
+      <div class="grid">
+        <div>
+          <label for="soil_preset">Soil preset (optional)</label>
+          <select id="soil_preset" name="soil_preset">
+            <option value="">-- Select preset or use Custom --</option>
+            <option value="alluvial">Alluvial (high N, good for paddy)</option>
+            <option value="loamy">Loamy (balanced nutrients)</option>
+            <option value="black">Black / Regur (moderate N)</option>
+            <option value="sandy">Sandy (low nutrients)</option>
+            <option value="laterite">Laterite (low P, low K)</option>
+            <option value="red">Red (variable)</option>
+            <option value="custom">Custom (enter N,P,K manually)</option>
+          </select>
+          <div class="preset-note">Choosing a preset will autofill N, P, K fields. Choose <b>Custom</b> to edit manually.</div>
+        </div>
+
+        <div>
+          <label for="city">City (optional, auto-fetch temp/humidity/rainfall)</label>
+          <input type="text" id="city" name="city" placeholder="e.g., Mumbai">
+          <div class="small">If you enter a city and have an OpenWeather API key configured, the server will fetch current temp/humidity/rain.</div>
+        </div>
+
+        <!-- N P K inputs -->
+        <div>
+          <label for="N">Nitrogen (N)</label>
+          <input type="number" id="N" name="N" step="0.1" placeholder="e.g., 90" value="{{ N|default('') }}">
+        </div>
+
+        <div>
+          <label for="P">Phosphorus (P)</label>
+          <input type="number" id="P" name="P" step="0.1" placeholder="e.g., 40" value="{{ P|default('') }}">
+        </div>
+
+        <div>
+          <label for="K">Potassium (K)</label>
+          <input type="number" id="K" name="K" step="0.1" placeholder="e.g., 40" value="{{ K|default('') }}">
+        </div>
+
+        <div>
+          <label for="ph">Soil pH</label>
+          <div class="range-row">
+            <div style="flex:1">
+              <input type="range" id="ph" name="ph" min="3.0" max="9.0" step="0.1" value="{{ ph|default(6.5) }}" class="range-input">
+            </div>
+            <span class="value" id="ph_val">{{ ph|default(6.5) }}</span>
+          </div>
+        </div>
+
+        <div>
+          <label for="temperature">Temperature (°C)</label>
+          <div class="range-row">
+            <div style="flex:1">
+              <input type="range" id="temperature" name="temperature" min="-10" max="50" step="0.1" value="{{ temperature|default(25) }}" class="range-input">
+            </div>
+            <span class="value" id="temperature_val">{{ temperature|default(25) }}°C</span>
+          </div>
+        </div>
+
+        <div>
+          <label for="humidity">Humidity (%)</label>
+          <input type="number" id="humidity" name="humidity" step="0.1" min="0" max="100" value="{{ humidity|default(70) }}">
+        </div>
+
+        <div class="full">
+          <label for="rainfall">Rainfall (mm)</label>
+          <div class="range-row">
+            <div style="flex:1">
+              <input type="range" id="rainfall" name="rainfall" min="0" max="500" step="1" value="{{ rainfall|default(100) }}" class="range-input">
+            </div>
+            <span class="value" id="rainfall_val">{{ rainfall|default(100) }} mm</span>
+          </div>
+        </div>
+
+        <div class="full">
+          <button type="submit">Predict Crop</button>
+        </div>
+      </div>
+    </form>
+
+    <!-- ERROR -->
+    {% if error %}
+      <div class="result" style="background:#fff2f2;border:1px solid #fcc7c7;color:#b71c1c;margin-top:14px;">
+        <strong>Error:</strong> {{ error }}
+      </div>
+    {% endif %}
+
+    <!-- RESULTS -->
+    {% if top_crops %}
+      <div class="result">
+        <h3>🌱 Top crop suggestions</h3>
+        <ol>
+          {% for crop, prob in top_crops %}
+            <li><strong>{{ crop }}</strong> — {{ prob }}%</li>
+          {% endfor %}
+        </ol>
+
+        <h4>Your input values</h4>
+        <table>
+          <tr><th>N</th><th>P</th><th>K</th><th>Temp (°C)</th><th>Humidity (%)</th><th>pH</th><th>Rainfall (mm)</th><th>City</th></tr>
+          <tr>
+            <td>{{ N }}</td><td>{{ P }}</td><td>{{ K }}</td><td>{{ temperature }}</td><td>{{ humidity }}</td><td>{{ ph }}</td><td>{{ rainfall }}</td><td>{{ city }}</td>
+          </tr>
+        </table>
+
+        <h4>💡 Fertilizer suggestions</h4>
+        <ul>
+          {% for rec in fertilizer_recs %}
+            <li>{{ rec }}</li>
+          {% endfor %}
+        </ul>
+      </div>
+    {% endif %}
+  </div>
+
+  <script>
+    // Soil presets mapping -> approximate example values (you can tweak)
+    const PRESETS = {
+      alluvial: {N: 90, P: 40, K: 40},
+      loamy:   {N: 80, P: 50, K: 50},
+      black:   {N: 60, P: 35, K: 35},
+      sandy:   {N: 15, P: 10, K: 10},
+      laterite:{N: 20, P: 8,  K: 10},
+      red:     {N: 40, P: 30, K: 30}
+    };
+
+    const soilSel = document.getElementById("soil_preset");
+    const Nfld = document.getElementById("N");
+    const Pfld = document.getElementById("P");
+    const Kfld = document.getElementById("K");
+    const phSlider = document.getElementById("ph");
+    const phVal = document.getElementById("ph_val");
+    const tempSlider = document.getElementById("temperature");
+    const tempVal = document.getElementById("temperature_val");
+    const rainSlider = document.getElementById("rainfall");
+    const rainVal = document.getElementById("rainfall_val");
+
+    function setNPk(values) {
+      Nfld.value = values.N;
+      Pfld.value = values.P;
+      Kfld.value = values.K;
+      Nfld.disabled = true;
+      Pfld.disabled = true;
+      Kfld.disabled = true;
+    }
+    function enableNPk() {
+      Nfld.disabled = false;
+      Pfld.disabled = false;
+      Kfld.disabled = false;
+    }
+
+    soilSel.addEventListener("change", function() {
+      const v = this.value;
+      if (!v || v === "") {
+        // nothing selected
+        Nfld.value = "";
+        Pfld.value = "";
+        Kfld.value = "";
+        enableNPk();
+      } else if (v === "custom") {
+        enableNPk();
+      } else if (PRESETS[v]) {
+        setNPk(PRESETS[v]);
+      } else {
+        enableNPk();
+      }
+    });
+
+    // Slider live value updates
+    function attachRange(rElem, displayElem, suffix="") {
+      displayElem.textContent = rElem.value + (suffix || "");
+      rElem.addEventListener("input", () => {
+        displayElem.textContent = rElem.value + (suffix || "");
+      });
+    }
+    attachRange(phSlider, phVal, "");
+    attachRange(tempSlider, tempVal, "°C");
+    attachRange(rainSlider, rainVal, " mm");
+
+    // On DOM load, if preset values came from server, keep them locked if soil_preset present
+    document.addEventListener("DOMContentLoaded", () => {
+      // if a soil_preset was returned by server, lock NPK
+      const initialPreset = "{{ soil_preset|default('') }}";
+      if (initialPreset && PRESETS[initialPreset]) {
+        setNPk(PRESETS[initialPreset]);
+      }
+
+      // If server returned N,P,K (manual), leave them editable
+      const serverN = "{{ N|default('') }}";
+      if (serverN !== "") {
+        // leave as-is, but ensure enabled
+        enableNPk();
+      }
+    });
+  </script>
+</body>
+</html>
