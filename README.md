@@ -11,4 +11,4 @@ based on soil nutrients (N, P, K), pH, weather conditions, and rainfall.
 
 📊 Dataset: [Kaggle - Crop Recommendation Dataset](https://www.kaggle.com/datasets/atharvaingle/crop-recommendation-dataset)
 
-🌐 Live Demo: [Streamlit App Link](YOUR_LINK_HERE)
+
